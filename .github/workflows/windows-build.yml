@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     steps:
     - name: Checkout Repository
@@ -16,23 +16,27 @@ jobs:
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
 
-    - name: Install Pre-compiled Qt6
-      uses: jurplel/install-qt-action@v3
-      with:
-        version: '6.7.2'
-        host: 'windows'
-        target: 'desktop'
-        arch: 'win64_msvc2022_64'
+    - name: Setup Official CMake
+      uses: jwlawson/actions-setup-cmake@v2
 
-    - name: Configure and Build BummerGram
+    - name: Download and Extract Standard Qt6 Binaries
+      shell: powershell
+      run: |
+        Write-Host "Downloading pre-compiled stable Qt6 package..."
+        $url = "https://github.com"
+        Invoke-WebRequest -Uri $url -OutFile "C:\qt6_base.zip"
+        Write-Host "Extracting binaries directly to C:\Qt6..."
+        Expand-Archive -Path "C:\qt6_base.zip" -DestinationPath "C:\Qt6" -Force
+
+    - name: Configure CMake and Build BummerGram
       shell: cmd
       run: |
         mkdir build
         cd build
-        cmake -DCMAKE_BUILD_TYPE=Release ..
+        cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="C:\Qt6" ..
         cmake --build . --config Release
 
-    - name: Upload Finished EXE
+    - name: Upload Finished BummerGram Binary
       uses: actions/upload-artifact@v4
       with:
         name: BummerGram-Windows-x64
