@@ -1,189 +1,44 @@
 name: Build BummerGram (Windows)
 
 on:
-  push:
-    branches: [main, master, develop]
-    tags:
-      - 'v*'
-  pull_request:
-    branches: [main, master]
   workflow_dispatch:
-
-env:
-  BUILD_TYPE: 'Release'
-  QT_VERSION_MAJOR: '6.7'
 
 jobs:
   build:
-    name: Build BummerGram (${{ matrix.architecture }})
-    runs-on: windows-latest
-    
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - architecture: 'x64'
-            qt_arch: 'win64_msvc2019_64'
-          - architecture: 'x86'
-            qt_arch: 'win32_msvc2019'
+    runs-on: windows-2022
 
     steps:
-      # ==========================================================================
-      # Checkout
-      # ==========================================================================
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
 
-      # ==========================================================================
-      # Setup Qt
-      # ==========================================================================
-      - name: Install Qt ${{ env.QT_VERSION_MAJOR }}
-        uses: jurplel/install-qt-action@v3
-        with:
-          version: '${{ env.QT_VERSION_MAJOR }}.0'
-          host: 'windows'
-          target: 'desktop'
-          arch: '${{ matrix.qt_arch }}'
-          dir: '${{ github.workspace }}/qt'
-          modules: 'qtimageformats qttools'
-          cache: true
-          setup-python: false
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
 
-      # ==========================================================================
-      # Setup MSVC
-      # ==========================================================================
-      - name: Setup MSVC
-        uses: William-Yeh-visual-studio-setup@v1
-        with:
-          architect: ${{ matrix.architecture }}
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-node-version: '20'
 
-      # ==========================================================================
-      # Setup vcpkg
-      # ==========================================================================
-      - name: Cache vcpkg
-        id: cache-vcpkg
-        uses: actions/cache@v4
-        with:
-          path: '${{ github.workspace }}/vcpkg'
-          key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json', '.github/workflows/windows-build.yml') }}
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: '6.7.2'
+        host: 'windows'
+        target: 'desktop'
+        arch: 'win64_msvc2022_64'
 
-      - name: Initialize vcpkg
-        if: steps.cache-vcpkg.outputs.cache-hit != 'true'
-        run: |
-          git clone --depth 1 https://github.com/microsoft/vcpkg.git '${{ github.workspace }}/vcpkg'
+    - name: Configure and Build BummerGram
+      shell: cmd
+      run: |
+        mkdir build
+        cd build
+        cmake -DCMAKE_BUILD_TYPE=Release ..
+        cmake --build . --config Release
 
-      - name: Bootstrap vcpkg
-        shell: pwsh
-        run: |
-          Set-Location '${{ github.workspace }}/vcpkg'
-          .\bootstrap-vcpkg.bat
-          .\vcpkg integrate install
-
-      # ==========================================================================
-      # Install Dependencies
-      # ==========================================================================
-      - name: Install dependencies via vcpkg
-        shell: pwsh
-        run: |
-          Set-Location '${{ github.workspace }}/vcpkg'
-          $triplet = if ('${{ matrix.architecture }}' -eq 'x64') { 'x64-windows' } else { 'x86-windows' }
-          .\vcpkg install --triplet $triplet lua sqlite3 zlib
-
-      # ==========================================================================
-      # Configure CMake
-      # ==========================================================================
-      - name: Configure CMake
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          
-          $BuildDir = '${{ github.workspace }}/build'
-          New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
-          
-          $triplet = if ('${{ matrix.architecture }}' -eq 'x64') { 'x64-windows' } else { 'x86-windows' }
-          $QtDir = '${{ github.workspace }}/qt/${{ env.QT_VERSION_MAJOR }}.0/${{ matrix.qt_arch }}'
-
-          cmake -S '${{ github.workspace }}' -B $BuildDir `
-            -G 'Visual Studio 17 2022' `
-            -A '${{ matrix.architecture }}' `
-            -DCMAKE_BUILD_TYPE='${{ env.BUILD_TYPE }}' `
-            -DCMAKE_PREFIX_PATH=$QtDir `
-            -DCMAKE_TOOLCHAIN_FILE='${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake' `
-            -DVCPKG_TARGET_TRIPLET=$triplet
-
-      # ==========================================================================
-      # Build
-      # ==========================================================================
-      - name: Build BummerGram
-        shell: pwsh
-        run: |
-          cmake --build '${{ github.workspace }}/build' --config '${{ env.BUILD_TYPE }}' --parallel
-
-      # ==========================================================================
-      # Package
-      # ==========================================================================
-      - name: Package application
-        shell: pwsh
-        run: |
-          $BuildDir = '${{ github.workspace }}/build'
-          $PackageDir = '${{ github.workspace }}/package'
-          $QtDir = '${{ github.workspace }}/qt/${{ env.QT_VERSION_MAJOR }}.0/${{ matrix.qt_arch }}'
-
-          New-Item -ItemType Directory -Force -Path $PackageDir | Out-Null
-          New-Item -ItemType Directory -Force -Path "$PackageDir/plugins" | Out-Null
-
-          Copy-Item "$BuildDir\${{ env.BUILD_TYPE }}\BummerGram.exe" -Destination $PackageDir
-
-          @('platforms', 'styles', 'imageformats') | ForEach-Object {
-            $src = "$QtDir\plugins\$_"
-            if (Test-Path $src) {
-              Copy-Item "$src\*" -Destination "$PackageDir\plugins\$_" -Recurse -Force
-            }
-          }
-
-      # ==========================================================================
-      # Create artifact
-      # ==========================================================================
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: BummerGram-${{ matrix.architecture }}-Binary
-          path: '${{ github.workspace }}/package/**'
-          retention-days: 14
-
-  release:
-    name: Create Release
-    needs: build
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          pattern: BummerGram-*-Binary
-          merge-multiple: true
-
-      - name: Create source archive
-        run: |
-          git archive --prefix=BummerGram-${{ github.ref_name }}/ -o BummerGram-${{ github.ref_name }}-source.zip HEAD
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            artifacts/**/*.exe
-            artifacts/**/plugins/**/*
-            BummerGram-${{ github.ref_name }}-source.zip
-          draft: false
-          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Upload Finished EXE
+      uses: actions/upload-artifact@v4
+      with:
+        name: BummerGram-Windows-x64
+        path: build/bin/Release/BummerGram.exe
