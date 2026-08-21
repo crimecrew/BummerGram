@@ -1,4 +1,4 @@
-name: Build BummerGram (Windows)
+name: Build BummerGram (Windows Official)
 
 on:
   workflow_dispatch:
@@ -13,24 +13,28 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Setup MSBuild
-      uses: microsoft/setup-msbuild@v2
+    - name: Setup MSYS2 and Install Qt6
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: >-
+          mingw-w64-x86_64-cmake
+          mingw-w64-x86_64-ninja
+          mingw-w64-x86_64-toolchain
+          mingw-w64-x86_64-qt6-base
+          mingw-w64-x86_64-qt6-5compat
 
-    - name: Install Qt6 via GitHub Cache
-      shell: cmd
-      run: |
-        vcpkg install qtbase:x64-windows qt5compat:x64-windows --binarysource="clear;nuget,GitHub,readwrite"
-
-    - name: Configure CMake and Build BummerGram
-      shell: cmd
+    - name: Configure and Build BummerGram
+      shell: msys2 {0}
       run: |
         mkdir build
         cd build
-        cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake ..
-        cmake --build . --config Release
+        cmake -G "Ninja" -DCMAKE_BUILD_TYPE=Release ..
+        ninja
 
     - name: Upload Finished BummerGram Binary
       uses: actions/upload-artifact@v4
       with:
         name: BummerGram-Windows-x64
-        path: build/bin/Release/BummerGram.exe
+        path: build/BummerGram.exe
