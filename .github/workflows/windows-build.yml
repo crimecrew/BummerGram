@@ -16,25 +16,20 @@ jobs:
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
 
-    - name: Set up vcpkg
-      shell: cmd
-      run: |
-        git clone https://github.com
-        cd vcpkg
-        call bootstrap-vcpkg.bat
-
-    - name: Install Qt6 and Dependencies via vcpkg
-      shell: cmd
-      run: |
-        cd vcpkg
-        vcpkg.exe install qtbase:x64-windows qt5compat:x64-windows
+    - name: Install Pre-compiled Qt6
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: '6.7.2'
+        host: 'windows'
+        target: 'desktop'
+        arch: 'win64_msvc2022_64'
 
     - name: Configure and Build BummerGram
       shell: cmd
       run: |
         mkdir build
         cd build
-        cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=..\vcpkg\scripts\buildsystems\vcpkg.cmake ..
+        cmake -DCMAKE_BUILD_TYPE=Release ..
         cmake --build . --config Release
 
     - name: Upload Finished EXE
