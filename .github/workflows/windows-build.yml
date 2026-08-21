@@ -1,0 +1,296 @@
+name: Build BummerGram (Windows)
+
+on:
+  push:
+    branches: [main, master, develop]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+env:
+  # Qt Configuration
+  QT_VERSION: '6.5.3'
+  QT_BASE_DIR: 'C:\Qt'
+  
+  # Build Configuration
+  BUILD_TYPE: 'Release'
+  QT_MSVC_VERSION: 'win64_msvc2019_64'
+  
+  # Paths
+  VCPKG_ROOT: '${{ github.workspace }}\vcpkg'
+
+jobs:
+  build:
+    name: Build BummerGram (${{ matrix.architecture }})
+    runs-on: windows-2019
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: 'x64'
+            vcpkg_triplet: 'x64-windows'
+            qt_platform: 'win64_msvc2019_64'
+          - architecture: 'x86'
+            vcpkg_triplet: 'x86-windows'
+            qt_platform: 'win32_msvc2019'
+
+    env:
+      VCPKG_INSTALLATION_ROOT: '${{ github.workspace }}\vcpkg'
+      VCPKG_DEFAULT_TRIPLET: ${{ matrix.vcpkg_triplet }}
+      VCPKG_MANIFEST_DIR: '${{ github.workspace }}'
+
+    steps:
+      # ==========================================================================
+      # Checkout
+      # ==========================================================================
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: false
+
+      # ==========================================================================
+      # Setup Qt
+      # ==========================================================================
+      - name: Cache Qt
+        id: cache-qt
+        uses: actions/cache@v3
+        with:
+          path: ${{ env.QT_BASE_DIR }}
+          key: ${{ runner.os }}-Qt-${{ env.QT_VERSION }}-${{ matrix.qt_platform }}
+
+      - name: Install Qt
+        if: steps.cache-qt.outputs.cache-hit != 'true'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          
+          # Download Qt installer
+          $QtDownloadUrl = "https://download.qt.io/official_releases/qt/${env:QT_VERSION}/${env:QT_VERSION}/qt-opensource-windows-x86-${env:QT_VERSION}.exe"
+          $InstallerPath = "$env:TEMP\qt-installer.exe"
+          
+          Write-Host "Downloading Qt ${env:QT_VERSION}..."
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          Invoke-WebRequest -Uri $QtDownloadUrl -OutFile $InstallerPath -UseBasicParsing
+          
+          # Install Qt components
+          Write-Host "Installing Qt..."
+          $Args = @(
+            "install", 
+            "${{ env.QT_VERSION }}",
+            "-verbose",
+            "-confirm-command",
+            "-recursive",
+            "-platform", "${{ matrix.qt_platform }}"
+          )
+          & $InstallerPath @Args
+          
+          Write-Host "Qt installation complete."
+
+      - name: Setup Qt PATH
+        run: |
+          $QtPath = "${env:QT_BASE_DIR}\${env:QT_VERSION}\${env:QT_VERSION}\${{ matrix.qt_platform }}\bin"
+          Add-Content $env:GITHUB_PATH -Value $QtPath
+          Write-Host "Added Qt to PATH: $QtPath"
+
+      # ==========================================================================
+      # Setup vcpkg
+      # ==========================================================================
+      - name: Cache vcpkg
+        id: cache-vcpkg
+        uses: actions/cache@v3
+        with:
+          path: ${{ env.VCPKG_ROOT }}
+          key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json', '.github/workflows/windows-build.yml') }}
+
+      - name: Initialize vcpkg
+        if: steps.cache-vcpkg.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 https://github.com/Microsoft/vcpkg.git ${{ env.VCPKG_ROOT }}
+
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: |
+          Set-Location ${{ env.VCPKG_ROOT }}
+          .\bootstrap-vcpkg.bat
+          .\vcpkg integrate install
+
+      # ==========================================================================
+      # Install Dependencies
+      # ==========================================================================
+      - name: Install dependencies via vcpkg
+        shell: pwsh
+        run: |
+          Set-Location ${{ env.VCPKG_ROOT }}
+          .\vcpkg install --triplet ${{ matrix.vcpkg_triplet }} `
+            lua `
+            sqlite3 `
+            zlib
+
+      # ==========================================================================
+      # Configure CMake
+      # ==========================================================================
+      - name: Configure CMake
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          
+          # Create build directory
+          $BuildDir = "${{ github.workspace }}\build"
+          New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
+          
+          # CMake configuration
+          $CMakeArgs = @(
+            "-S", "${{ github.workspace }}",
+            "-B", $BuildDir,
+            "-G", "Visual Studio 16 2019",
+            "-A", "${{ matrix.architecture }}",
+            "-DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}",
+            "-DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake",
+            "-DVCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }}",
+            "-DQT_VERSION=${{ env.QT_VERSION }}"
+          )
+          
+          Write-Host "CMake configure..."
+          cmake @CMakeArgs
+          
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "CMake configuration failed"
+          }
+
+      # ==========================================================================
+      # Build
+      # ==========================================================================
+      - name: Build BummerGram
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          
+          $BuildDir = "${{ github.workspace }}\build"
+          
+          Write-Host "Building BummerGram..."
+          cmake --build $BuildDir --config ${{ env.BUILD_TYPE }} --parallel
+          
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Build failed"
+          }
+
+      # ==========================================================================
+      # Package
+      # ==========================================================================
+      - name: Package application
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          
+          $BuildDir = "${{ github.workspace }}\build"
+          $PackageDir = "${{ github.workspace }}\package"
+          
+          # Create package directory
+          New-Item -ItemType Directory -Force -Path $PackageDir | Out-Null
+          
+          # Copy executable and dependencies
+          Copy-Item "$BuildDir\${{ env.BUILD_TYPE }}\BummerGram.exe" -Destination $PackageDir
+          
+          # Copy Qt plugins
+          $QtPluginsDir = "${{ env.QT_BASE_DIR }}\${env:QT_VERSION}\${env:QT_VERSION}\${{ matrix.qt_platform }}\plugins"
+          $DestPluginsDir = "$PackageDir\plugins"
+          New-Item -ItemType Directory -Force -Path $DestPluginsDir | Out-Null
+          
+          @("platforms", "styles", "imageformats", "audio") | ForEach-Object {
+            $Src = "$QtPluginsDir\$_"
+            if (Test-Path $Src) {
+              Copy-Item "$Src\*" -Destination "$DestPluginsDir\$_" -Recurse -Force
+            }
+          }
+          
+          # Copy vcpkg dependencies
+          & "${{ env.VCPKG_ROOT }}\vcpkg" export `
+            --triplet ${{ matrix.vcpkg_triplet }} `
+            --raw `
+            --output="$PackageDir\deps"
+          
+          Write-Host "Packaging complete."
+
+      # ==========================================================================
+      # Create artifact
+      # ==========================================================================
+      - name: Create artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: BummerGram-${{ matrix.architecture }}-Binary
+          path: |
+            ${{ github.workspace }}/package/**
+            ${{ github.workspace }}/build/${{ env.BUILD_TYPE }}/*.exe
+            ${{ github.workspace }}/build/${{ env.BUILD_TYPE }}/*.pdb
+          retention-days: 14
+
+  # ============================================================================
+  # Documentation
+  # ============================================================================
+  docs:
+    name: Build Documentation
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y doxygen graphviz
+
+      - name: Generate documentation
+        run: |
+          cd "${{ github.workspace }}"
+          doxygen Doxyfile 2>/dev/null || echo "Doxygen not configured"
+
+      - name: Upload documentation
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: BummerGram-Documentation
+          path: doc/html/**
+          retention-days: 7
+
+  # ============================================================================
+  # Release (on tags)
+  # ============================================================================
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+
+      - name: Create source archive
+        run: |
+          git archive --prefix=BummerGram-${{ github.ref_name }}/ -o BummerGram-${{ github.ref_name }}-source.zip HEAD
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/**/*.exe
+            artifacts/**/*.pdb
+            artifacts/**/plugins/**/*
+            BummerGram-${{ github.ref_name }}-source.zip
+          draft: false
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

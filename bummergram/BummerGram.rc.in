@@ -1,0 +1,55 @@
+#if defined(UNDER_CE)
+# include <ceclext.h>
+# pragma comment(linker, "/ENTRY:wWinMainCRTStartup")
+#endif
+
+#define BUMMERGRAM_VERSION_MAJOR @BUMMERGRAM_VERSION_MAJOR@
+#define BUMMERGRAM_VERSION_MINOR @BUMMERGRAM_VERSION_MINOR@
+#define BUMMERGRAM_VERSION_PATCH @BUMMERGRAM_VERSION_PATCH@
+
+#define BUMMERGRAM_RESOURCE_IDENTIFIER 1
+
+#include <winuser.h>
+#include <winver.h>
+
+#if defined BUMMERGRAM_RESOURCE_IDENTIFIER
+#define VS_VERSION_INFO 1
+#endif
+
+#ifdef _DEBUG
+#define BUMMERGRAM_CONFIG "Debug"
+#else
+#define BUMMERGRAM_CONFIG "Release"
+#endif
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     BUMMERGRAM_VERSION_MAJOR, BUMMERGRAM_VERSION_MINOR, BUMMERGRAM_VERSION_PATCH, 0
+PRODUCTVERSION  BUMMERGRAM_VERSION_MAJOR, BUMMERGRAM_VERSION_MINOR, BUMMERGRAM_VERSION_PATCH, 0
+FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+FILEFLAGS       (VS_FF_DEBUG | VS_FF_PRERELEASE)
+FILEOS          VOS__WINDOWS32
+FILETYPE        VFT_APP
+FILESUBTYPE     VFT2_UNKNOWN
+
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904E4"
+        BEGIN
+            VALUE "CompanyName",      "BummerGram"
+            VALUE "FileDescription",  "BummerGram - Enhanced Desktop Client"
+            VALUE "FileVersion",      "@BUMMERGRAM_VERSION_MAJOR@.@BUMMERGRAM_VERSION_MINOR@.@BUMMERGRAM_VERSION_PATCH@"
+            VALUE "InternalName",     "BummerGram"
+            VALUE "LegalCopyright",   "Copyright (C) 2024 BummerGram. All rights reserved."
+            VALUE "OriginalFilename", "BummerGram.exe"
+            VALUE "ProductName",      "BummerGram"
+            VALUE "ProductVersion",   "@BUMMERGRAM_VERSION_MAJOR@.@BUMMERGRAM_VERSION_MINOR@.@BUMMERGRAM_VERSION_PATCH@"
+            VALUE "BuildConfiguration", BUMMERGRAM_CONFIG
+        END
+    END
+
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1252
+    END
+END

@@ -1,0 +1,12 @@
+<RCC>
+    <qresource prefix="/">
+        <file>qss/dark.qss</file>
+        <file>qss/light.qss</file>
+    </qresource>
+    <qresource prefix="/audio">
+        <file>audio/startup.wav</file>
+    </qresource>
+    <qresource prefix="/icons">
+        <file>icons/app.png</file>
+    </qresource>
+</RCC>
