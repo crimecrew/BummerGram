@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: windows-2022
+    runs-on: windows-latest
 
     steps:
     - name: Checkout Repository
@@ -16,24 +16,17 @@ jobs:
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
 
-    - name: Setup Official CMake
-      uses: jwlawson/actions-setup-cmake@v2
-
-    - name: Download and Extract Standard Qt6 Binaries
-      shell: powershell
+    - name: Install Qt6 via GitHub Cache
+      shell: cmd
       run: |
-        Write-Host "Downloading pre-compiled stable Qt6 package..."
-        $url = "https://github.com"
-        Invoke-WebRequest -Uri $url -OutFile "C:\qt6_base.zip"
-        Write-Host "Extracting binaries directly to C:\Qt6..."
-        Expand-Archive -Path "C:\qt6_base.zip" -DestinationPath "C:\Qt6" -Force
+        vcpkg install qtbase:x64-windows qt5compat:x64-windows --binarysource="clear;nuget,GitHub,readwrite"
 
     - name: Configure CMake and Build BummerGram
       shell: cmd
       run: |
         mkdir build
         cd build
-        cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="C:\Qt6" ..
+        cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake ..
         cmake --build . --config Release
 
     - name: Upload Finished BummerGram Binary
