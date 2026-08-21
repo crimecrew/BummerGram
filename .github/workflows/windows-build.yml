@@ -218,7 +218,7 @@ jobs:
       # Create artifact
       # ==========================================================================
       - name: Create artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: BummerGram-${{ matrix.architecture }}-Binary
           path: |
@@ -252,7 +252,7 @@ jobs:
 
       - name: Upload documentation
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: BummerGram-Documentation
           path: doc/html/**
